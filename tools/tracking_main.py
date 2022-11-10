@@ -130,7 +130,6 @@ def write_detection_crops(crop_dir,
             crop_path = os.path.join(crop_dir, f'{frame_id}_{id2cls[cls_id]}_{track}.jpg')
             cv2.imwrite(crop_path, crop)
 
-
 def apply_run_thresholds_to_exp(exp, exp_params):
     # apply run-specific params to exp definition
     for param, value in exp_params.items():
@@ -167,7 +166,8 @@ def write_results(file_path, results):
     logger.info('save results to {}'.format(file_path))
 
 
-
+def exists(var):
+    return var in globals()
 
 
 class Predictor(object):
@@ -349,11 +349,15 @@ def track_video(predictor, cap, save_path, save_video, exp_params):
                 # Write video of tracks
                 vid_writer.write(online_img)
 
+
+
             # write detections to log
             write_results_mcmot(f_path=save_path['log'],
                                 frame_id=frame_id,
-                                online_tr_ids_dict=online_tr_ids_dict,
-                                online_tlwhs_dict=online_tlwhs_dict,
+
+                                # Todo: clean up this hack to allow for writing missing rows
+                                online_tr_ids_dict=online_tr_ids_dict if exists('online_tr_ids_dict') else defaultdict(list),
+                                online_tlwhs_dict=online_tlwhs_dict if exists('online_tlwhs_dict') else defaultdict(list),
                                 id2cls=id2cls)
 
                 # TODO: configure writing to disk
@@ -553,7 +557,7 @@ if __name__ == "__main__":
     run_tracker(
 
         # Required Args
-        input_path='/Users/dschmidt/PycharmProjects/temp-video-tracking/input',
+        input_path='/Users/dschmidt/PycharmProjects/temp-video-tracking/input/347098902.mp4', # either folder for multiple videos or single video
         output_dir='/Users/dschmidt/PycharmProjects/temp-video-tracking/output',
 
         # Optional args
@@ -578,37 +582,3 @@ if __name__ == "__main__":
         track_buffer=240,
         min_box_area=10000,
         device='cuda' if torch.cuda.is_available() else 'cpu')
-
-
-
-
-
-
-    ## ----- run tracking (single video)
-    run_tracker(
-                # Required Args
-                input_path='/Users/dschmidt/PycharmProjects/temp-video-tracking/input/347109422.mp4', # either link to specific file or folder
-                output_dir='/Users/dschmidt/PycharmProjects/temp-video-tracking/output',
-
-                # Optional args
-                exp_file='/Users/dschmidt/PycharmProjects/temp-video-tracking/tracking_utils/yolox_tiny_det.py',
-                ckpt_path='/Users/dschmidt/PycharmProjects/temp-video-tracking/pretrained/yolox_tiny_32.8.pth',
-                save_video=True,  # Boolean, save tracking video or not
-                n_classes=80,
-                class_names=COCO_CLASSES,
-                input_size=(448, 768),
-
-                # detection thresholds
-                conf_thresh=0.5,
-                nms_thresh=0.5,
-                low_det_thresh=0.1,
-
-                # tracking thresholds
-                match_thresh=0.8,
-                low_match_thresh=0.5,
-                unconfirmed_match_thresh=0.7,
-                iou_thresh=0.2,
-                track_thresh=0.6,
-                track_buffer=240,
-                min_box_area=10000,
-                device='cuda' if torch.cuda.is_available() else 'cpu')
