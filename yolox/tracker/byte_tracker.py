@@ -1726,14 +1726,13 @@ class ByteTracker(object):
         """
         self.frame_id = 0
         self.opt = opt
-        print("opt:\n", self.opt)
 
         # self.det_thresh = args.track_thresh
-        self.low_det_thresh = 0.1
+        self.low_det_thresh = self.opt.low_det_thresh
         self.high_det_thresh = self.opt.track_thresh  # 0.5
         self.high_match_thresh = self.opt.match_thresh  # 0.8
-        self.low_match_thresh = 0.5
-        self.unconfirmed_match_thresh = 0.7
+        self.low_match_thresh = self.opt.low_match_thresh
+        self.unconfirmed_match_thresh = self.opt.unconfirmed_match_thresh
         self.new_track_thresh = self.high_det_thresh
         # self.new_track_thresh = 0.2
 
@@ -1753,11 +1752,8 @@ class ByteTracker(object):
 
         # Get number of tracking object classes, class_names by default, unless filter is applied
 
-        # self.class_names = opt.class_names
-        # self.n_classes = opt.n_classes
-        self.class_names = opt.class_names_filter
-        self.n_classes = opt.n_classes_filter
-
+        self.class_names = opt.class_names
+        self.n_classes = opt.n_classes
 
         # Define track lists for single object class
         self.tracked_tracks = []  # type: list[Track]
@@ -1772,7 +1768,7 @@ class ByteTracker(object):
         self.tracks = []
         self.tracked_tracks = []
 
-        self.iou_threshold = 0.3
+        self.iou_threshold = self.opt.iou_thresh
         self.vel_dir_weight = 0.2
 
         self.delta_t = delta_t
