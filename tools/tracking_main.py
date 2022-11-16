@@ -12,6 +12,8 @@ from yolox.utils import post_process
 from yolox.utils.visualize import plot_tracking_sc, \
     plot_tracking_mc
 
+_HERE = os.path.dirname(__file__)
+_ROOT = os.path.dirname(_HERE)
 
 COCO_CLASSES = ['person', 'bicycle', 'car', 'motorcycle', 'airplane', 'bus', 'train', 'truck', 'boat', 'traffic light',
                 'fire hydrant', 'stop sign', 'parking meter', 'bench', 'bird', 'cat', 'dog', 'horse', 'sheep', 'cow',
@@ -471,8 +473,8 @@ def tracker_wrapper(predictor, input_path, output_dir, save_video, exp_params):
 
 def run_tracker(input_path,
                 output_dir,
-                exp_file='/Users/dschmidt/PycharmProjects/temp-video-tracking/tracking_utils/yolox_tiny_det.py',
-                ckpt_path='/Users/dschmidt/PycharmProjects/temp-video-tracking/pretrained/yolox_tiny_32.8.pth',
+                exp_file=os.path.join(_ROOT, "tracking_utils", "yolox_tiny_det.py"),
+                ckpt_path=os.path.join(_ROOT, "pretrained", "yolox_tiny_32.8.pth"),
                 save_video=False,
                 n_classes=80,
                 class_names=COCO_CLASSES,
@@ -530,7 +532,7 @@ def run_tracker(input_path,
     # load the model state dict
     logger.info("Loading checkpoint...")
     net.load_state_dict(ckpt["model"])
-    logger.info(f"Checkpoint {ckpt_path} has been sucessfully loaded")
+    logger.info(f"Checkpoint {ckpt_path} has been successfully loaded")
 
     ## ---------- Define the predictor
     predictor = Predictor(model=net,
