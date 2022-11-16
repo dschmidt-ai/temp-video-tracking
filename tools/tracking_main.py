@@ -95,21 +95,20 @@ def write_results_dict(f_path,
     logger.info('Save results to {}.\n'.format(f_path))
 
 
-def write_results_mcmot(f_path,
-                        frame_id,
+def write_results_mcmot(frame_id,
                         online_tr_ids_dict,
                         online_tlwhs_dict,
                         id2cls):
 
-    lines = []
+    dets = []
     # iterate over class
     for cls_id, tracks in online_tr_ids_dict.items():
         for track_id, track in enumerate(tracks):
             tlwh = online_tlwhs_dict[cls_id][track_id]
             x1, y1, w, h = tlwh
-            lines.append(f'{frame_id},{id2cls[cls_id]},{track},{x1:.2f},{y1:.2f},{w:.2f},{h:.2f}\n') # write_line
-    with open(f_path, "a+", encoding="utf-8") as f:
-        f.writelines(lines)
+            dets.append(f'{frame_id},{id2cls[cls_id]},{track},{x1:.2f},{y1:.2f},{w:.2f},{h:.2f}') # write_line
+            # dets.append([frame_id, id2cls[cls_id], track, round(x1,2), round(y1, 2), round(w,2), round(h,2)]) # write det row
+    return dets
 
 
 def write_detection_crops(crop_dir,
@@ -238,7 +237,7 @@ class Predictor(object):
             return outputs, img_info
 
 
-def track_video(predictor, cap, save_path, save_video, exp_params):
+def track_video(predictor, cap, save_path, save_video, exp_params, video_id):
     """
     online or offline tracking
     :param predictor:
@@ -282,8 +281,9 @@ def track_video(predictor, cap, save_path, save_video, exp_params):
     net_size = opt.input_size
 
     frame_id = 0
-    results = []
+    tracking_log = []
 
+    # step unti
     while True:
 
         ## ----- read the video
@@ -302,65 +302,41 @@ def track_video(predictor, cap, save_path, save_video, exp_params):
                 # update byte
                 online_dict = tracker.update_byte_enhance2(dets, input_size, net_size)
 
-                ## ----- plot single-class multi-object tracking results
-                if tracker.n_classes == 1:
-                    online_tlwhs = []
-                    online_ids = []
-                    online_scores = []
+                ## ---------- aggregate current frame's results for each object class
+                online_tlwhs_dict = defaultdict(list)
+                online_tr_ids_dict = defaultdict(list)
+                for cls_id in range(tracker.n_classes):  # process each object class
+                    online_targets = online_dict[cls_id]
                     for track in online_targets:
-                        tlwh = track.tlwh
-                        tid = track.track_id
 
-                        if tlwh[2] * tlwh[3] > opt.min_box_area:
-                            online_tlwhs.append(tlwh)
-                            online_ids.append(tid)
-                            online_scores.append(track.score)
+                        # TODO: Check if min_box_size works
+                        if track.tlwh[-2] * track.tlwh[-1] > opt.min_box_area:
+                            online_tlwhs_dict[cls_id].append(track.tlwh)
+                            online_tr_ids_dict[cls_id].append(track.track_id)
 
-                    results.append((frame_id + 1, online_tlwhs, online_ids, online_scores))
+                online_img = plot_tracking_mc(img=img_info['raw_img'],
+                                              tlwhs_dict=online_tlwhs_dict,
+                                              obj_ids_dict=online_tr_ids_dict,
+                                              num_classes=tracker.n_classes,
+                                              frame_id=frame_id + 1,
+                                              id2cls=id2cls)
 
-                    online_img = plot_tracking_sc(img_info['raw_img'],
-                                                  online_tlwhs,
-                                                  online_ids,
-                                                  frame_id=frame_id + 1)
-
-                ## ----- plot multi-class multi-object tracking results
-                elif tracker.n_classes > 1:
-                    ## ---------- aggregate current frame's results for each object class
-                    online_tlwhs_dict = defaultdict(list)
-                    online_tr_ids_dict = defaultdict(list)
-                    for cls_id in range(tracker.n_classes):  # process each object class
-                        online_targets = online_dict[cls_id]
-                        for track in online_targets:
-
-                            # TODO: Check if min_box_size works
-                            if track.tlwh[-2] * track.tlwh[-1] > opt.min_box_area:
-                                online_tlwhs_dict[cls_id].append(track.tlwh)
-                                online_tr_ids_dict[cls_id].append(track.track_id)
-
-                    online_img = plot_tracking_mc(img=img_info['raw_img'],
-                                                  tlwhs_dict=online_tlwhs_dict,
-                                                  obj_ids_dict=online_tr_ids_dict,
-                                                  num_classes=tracker.n_classes,
-                                                  frame_id=frame_id + 1,
-                                                  id2cls=id2cls)
-
+            # if no detections
             else:
                 online_img = img_info['raw_img']
+                online_tlwhs_dict = defaultdict(list)
+                online_tr_ids_dict = defaultdict(list)
 
             if save_video:
                 # Write video of tracks
                 vid_writer.write(online_img)
 
-
-
             # write detections to log
-            write_results_mcmot(f_path=save_path['log'],
-                                frame_id=frame_id,
-
-                                # Todo: clean up this hack to allow for writing missing rows
-                                online_tr_ids_dict=online_tr_ids_dict if exists('online_tr_ids_dict') else defaultdict(list),
-                                online_tlwhs_dict=online_tlwhs_dict if exists('online_tlwhs_dict') else defaultdict(list),
-                                id2cls=id2cls)
+            tracking_log.append(write_results_mcmot(frame_id=frame_id,
+                                                    # Todo: clean up this hack to allow for writing missing rows
+                                                    online_tr_ids_dict=online_tr_ids_dict,
+                                                    online_tlwhs_dict=online_tlwhs_dict,
+                                                    id2cls=id2cls))
 
                 # TODO: configure writing to disk
                 # # write detection crops to disk
@@ -382,8 +358,8 @@ def track_video(predictor, cap, save_path, save_video, exp_params):
         ## ----- update frame id
         frame_id += 1
 
-    print("{:s} saved.".format(vid_save_path))
-
+    print("{:s} log returned.".format(vid_save_path))
+    return tracking_log
 
 def tracker_wrapper(predictor, input_path, output_dir, save_video, exp_params):
     """
@@ -393,82 +369,59 @@ def tracker_wrapper(predictor, input_path, output_dir, save_video, exp_params):
     :param opt:
     :return:
     """
+    # TODO: be able to support .WAV video files
+    # TODO: deprecate 'video' codepath by only using videos
+    if os.path.isdir(input_path):
+        mp4_path_list = [input_path + "/" + x for x in os.listdir(input_path)
+                         if x.endswith(".mp4")]
 
-    mode = 'videos' if os.path.isdir(input_path) else 'video'
+    else:
+        mp4_path_list = [input_path]
 
-    if mode == "videos":
-        if os.path.isdir(input_path):
 
-            # TODO: Check if support for other video types is necessary
-            mp4_path_list = [input_path + "/" + x for x in os.listdir(input_path)
-                             if x.endswith(".mp4")]
-            mp4_path_list.sort()
-            if len(mp4_path_list) == 0:
-                logger.error("empty mp4 video list.")
-                exit(-1)
+    # if os.path.isdir(input_path):
+    #     input_path = os.path.join(os.path.split(input_path)[:-1])
+    # # mode = 'videos' if  else 'video'
 
-            for video_path in mp4_path_list:
-                if os.path.isfile(video_path):
+    if len(mp4_path_list) == 0:
+        logger.error("empty mp4 video list.")
+        exit(-1)
 
-                    # TODO: Check if this is the right structure for determining video_name
-                    video_name = os.path.split(video_path)[-1][:-4]
-                    print(f"\nStart tracking video {video_name} offline...")
+    return_log = []
 
-                    ## ----- video capture
-                    cap = cv2.VideoCapture(video_path)
-                    ## -----
+    for video_path in mp4_path_list:
+        if os.path.isfile(video_path):
 
-                    save_dir = os.path.join(output_dir, video_name)
-                    if not os.path.isdir(save_dir):
-                        os.makedirs(save_dir)
-
-                    save_path = {'log': os.path.join(save_dir, "log.txt"),
-                                 'video': os.path.join(save_dir, "video.mp4")}
-
-                    ## ---------- Get tracking results
-                    track_video(predictor=predictor,
-                                cap=cap,
-                                exp_params=exp_params,
-                                save_path=save_path,
-                                save_video=save_video)
-
-                    ## ----------
-                    print(f"{video_name} tracking offline done")
-
-    elif mode == "video":
-        input_path = os.path.abspath(input_path)
-
-        if os.path.isfile(input_path):
-            # Todo: check if this gets the video name correctly
-            video_name = input_path.split("/")[-1][:-4]
-            print(f"Start tracking video {video_name} offline...")
+            # TODO: Check if this is the right structure for determining video_name
+            video_name = os.path.split(video_path)[-1][:-4]
+            print(f"\nStart tracking video {video_name}...")
 
             ## ----- video capture
-            cap = cv2.VideoCapture(input_path)
+            cap = cv2.VideoCapture(video_path)
             ## -----
 
             save_dir = os.path.join(output_dir, video_name)
             if not os.path.isdir(save_dir):
                 os.makedirs(save_dir)
 
-            save_path = {'log': os.path.join(save_dir, "log.txt"),
+            # TODO: remove save_stuff
+            save_path = {'tracking_log': os.path.join(save_dir, "tracking_log.txt"),
                          'video': os.path.join(save_dir, "video.mp4")}
 
             ## ---------- Get tracking results
-            track_video(predictor=predictor,
-                        cap=cap,
-                        exp_params=exp_params,
-                        save_path=save_path,
-                        save_video=save_video)
+            tracking_log = track_video(predictor=predictor,
+                                       cap=cap,
+                                       exp_params=exp_params,
+                                       save_path=save_path,
+                                       save_video=save_video,
+                                       video_id=video_name)
 
             ## ----------
+            print(f"{video_name} tracking done")
 
-            print(f"{video_name} tracking done offline.")
-            logger.info(f'Save results to {save_path["log"]}')
-
-        else:
-            logger.error(f"invalid video path: {input_path}, exit now!")
-            exit(-1)
+            # TODO: Check memory issues with a large number of videos
+            return_log.append({'video_id': video_name, 'tracking_log': tracking_log})
+    return return_log
 
 
 def run_tracker(input_path,
@@ -544,11 +497,11 @@ def run_tracker(input_path,
 
     ## ----------
     # run tracker
-    tracker_wrapper(predictor=predictor,
-                    input_path=input_path,
-                    output_dir=output_dir,
-                    save_video=save_video,
-                    exp_params=exp_params)
+    return_log = tracker_wrapper(predictor=predictor,
+                                 input_path=input_path,
+                                 output_dir=output_dir,
+                                 save_video=save_video,
+                                 exp_params=exp_params)
 
 
 if __name__ == "__main__":
@@ -559,7 +512,8 @@ if __name__ == "__main__":
     run_tracker(
 
         # Required Args
-        input_path='/Users/dschmidt/PycharmProjects/temp-video-tracking/input/347098902.mp4', # either folder for multiple videos or single video
+        # input_path='/Users/dschmidt/PycharmProjects/temp-video-tracking/input', # either folder for multiple videos or single video
+        input_path='/Users/dschmidt/PycharmProjects/temp-video-tracking/input',
         output_dir='/Users/dschmidt/PycharmProjects/temp-video-tracking/output',
 
         # Optional args
